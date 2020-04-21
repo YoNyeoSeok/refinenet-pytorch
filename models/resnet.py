@@ -132,11 +132,13 @@ class RefineNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+
         self.p_ims1d2_outl1_dimred = conv3x3(2048, 512, bias=False)
         self.adapt_stage1_b = self._make_rcu(512, 512, 2, 2)
         self.mflow_conv_g1_pool = self._make_crp(512, 512, 4)
         self.mflow_conv_g1_b = self._make_rcu(512, 512, 3, 2)
         self.mflow_conv_g1_b3_joint_varout_dimred = conv3x3(512, 256, bias=False)
+
         self.p_ims1d2_outl2_dimred = conv3x3(1024, 256, bias=False)
         self.adapt_stage2_b = self._make_rcu(256, 256, 2, 2)
         self.adapt_stage2_b2_joint_varout_dimred = conv3x3(256, 256, bias=False)
@@ -199,43 +201,62 @@ class RefineNet(nn.Module):
         l4 = self.do(l4)
         l3 = self.do(l3)
 
+        # x4 adapt
         x4 = self.p_ims1d2_outl1_dimred(l4)
         x4 = self.adapt_stage1_b(x4)
+        # x4 crp
         x4 = self.relu(x4)
         x4 = self.mflow_conv_g1_pool(x4)
+        # x4 rcu
         x4 = self.mflow_conv_g1_b(x4)
+
+        # x3 mf
         x4 = self.mflow_conv_g1_b3_joint_varout_dimred(x4)
         x4 = nn.Upsample(size=l3.size()[2:], mode='bilinear', align_corners=True)(x4)
-
+        # x3 adapt
         x3 = self.p_ims1d2_outl2_dimred(l3)
         x3 = self.adapt_stage2_b(x3)
+        # x3 mf
         x3 = self.adapt_stage2_b2_joint_varout_dimred(x3)
         x3 = x3 + x4
+        # x3 crp
         x3 = F.relu(x3)
         x3 = self.mflow_conv_g2_pool(x3)
+        # x3 rcu
         x3 = self.mflow_conv_g2_b(x3)
+
+        # x2 mf
         x3 = self.mflow_conv_g2_b3_joint_varout_dimred(x3)
         x3 = nn.Upsample(size=l2.size()[2:], mode='bilinear', align_corners=True)(x3)
-
+        # x2 adapt
         x2 = self.p_ims1d2_outl3_dimred(l2)
         x2 = self.adapt_stage3_b(x2)
+        # x2 mf
         x2 = self.adapt_stage3_b2_joint_varout_dimred(x2)
         x2 = x2 + x3
+        # x2 crp
         x2 = F.relu(x2)
         x2 = self.mflow_conv_g3_pool(x2)
+        # x2 rcu
         x2 = self.mflow_conv_g3_b(x2)
+
+        # x1 mf
         x2 = self.mflow_conv_g3_b3_joint_varout_dimred(x2)
         x2 = nn.Upsample(size=l1.size()[2:], mode='bilinear', align_corners=True)(x2)
-
+        # x1 stage
         x1 = self.p_ims1d2_outl4_dimred(l1)
         x1 = self.adapt_stage4_b(x1)
+        # x1 mf
         x1 = self.adapt_stage4_b2_joint_varout_dimred(x1)
         x1 = x1 + x2
+        # x1 crp
         x1 = F.relu(x1)
         x1 = self.mflow_conv_g4_pool(x1)
+        #x1 rcu
         x1 = self.mflow_conv_g4_b(x1)
-        x1 = self.do(x1)
 
+        # x1 classifier
+        x1 = self.do(x1)
         out = self.clf_conv(x1)
         return out
 
