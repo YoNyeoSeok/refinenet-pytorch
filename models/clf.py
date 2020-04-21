@@ -28,37 +28,31 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 import torch.nn as nn
-import torch.nn.functional as F
 import torch
 
-import numpy as np
 
-from models.featnet_1 import Featnet_1
-from models.refinenets import Refinenets
-from models.clf import Clf
-
-import os
-from scipy import io as sio
-
-class Net(nn.Module):
-    def __init__(self, featnet_1, refinenets, clf):
-        super(Net, self).__init__()
-        self.featnet_1 = featnet_1
-        self.refinenets = refinenets
-        self.clf = clf
+class Clf(nn.Module):
+    
+    def __init__(self):
+        super(Clf, self).__init__()
+        self.dropout = nn.Dropout(0.5)
+        self.conv = nn.Conv2d(256, 20, kernel_size=[3, 3], stride=(1, 1), padding=(1, 1), bias=True)
         
     def forward(self, x):
-        x = self.featnet_1(x)
-        x = self.refinenets(x)
-        x = self.clf(x)
+        x = self.dropout(x)
+        x = self.conv(x)
         return x
 
-def net(weights_dir=None, **kwargs):
-    featnet_1 = Featnet_1()
-    refinenets = Refinenets()
-    clf = Clf()
-    if weights_dir:
-        featnet_1.load_state_dict(torch.load(os.path.join(weights_dir, 'featnet_1.pth')))
-        refinenets.load_state_dict(torch.load(os.path.join(weights_dir, 'refinenets.pth')))
-        clf.load_state_dict(torch.load(os.path.join(weights_dir, 'clf.pth')))
-    return Net(featnet_1, refinenets, clf)
+
+def clf(weights_path=None, **kwargs):
+    """
+    load imported model instance
+
+    Args:
+        weights_path (str): If set, loads model weights from the given path
+    """
+    model = Clf()
+    if weights_path:
+        state_dict = torch.load(weights_path)
+        model.load_state_dict(state_dict)
+    return model

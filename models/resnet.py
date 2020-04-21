@@ -266,12 +266,18 @@ def rf101(num_classes, imagenet=False, pretrained=True, **kwargs):
     if imagenet:
         key = '101_imagenet'
         url = models_urls[key]
-        model.load_state_dict(maybe_download(key, url), strict=False)
+        state_dict = maybe_download(key, url)
+        model.load_state_dict(state_dict, strict=False)
     elif pretrained:
         dataset = data_info.get(num_classes, None)
         if dataset:
             bname = '101_' + dataset.lower()
             key = 'rf' + bname
             url = models_urls[bname]
-            model.load_state_dict(maybe_download(key, url), strict=False)
-    return model
+            state_dict = maybe_download(key, url)
+            model.load_state_dict(state_dict)
+        else:
+            assert False
+    else:
+        assert False
+    return model, state_dict
