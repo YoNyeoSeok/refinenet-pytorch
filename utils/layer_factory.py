@@ -27,6 +27,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
+import numpy as np
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -101,4 +103,17 @@ class RCUBlock(nn.Module):
             x += residual
         return x
 
-
+class MFBlock(nn.Upsample):
+    def __init__(self, *args, mode='bilinear', **kwds):
+        super(MFBlock, self).__init__(*args, mode=mode, **kwds)
+    
+    def forward(self, *xs):
+        try:
+            outputs = torch.stack([super(MFBlock, self).forward(x) for x in xs])
+        except ValueError:
+            self.size = tuple(np.stack([x.shape[2:] for x in xs]).max(0))
+            outputs = torch.stack([super(MFBlock, self).forward(x) for x in xs])
+        except Exception as e:
+            assert False, e
+        finally:
+            return torch.sum(outputs, 0)
