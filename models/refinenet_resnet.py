@@ -33,32 +33,32 @@ import torch
 
 import numpy as np
 
-from models.featnet_1 import Featnet_1
-from models.refinenets import Refinenets
-from models.clf import Clf
+from models.resnet import (Resnet101, resnet101)
+from models.refinenets import Refinenets, refinenets
+from models.clf import Clf, clf
 
 import os
 from scipy import io as sio
 
-class Net(nn.Module):
-    def __init__(self, featnet_1, refinenets, clf):
-        super(Net, self).__init__()
-        self.featnet_1 = featnet_1
+class RefineNet_ResNet(nn.Module):
+    def __init__(self, resnet, refinenets, clf):
+        super(RefineNet_ResNet, self).__init__()
+        self.resnet = resnet
         self.refinenets = refinenets
         self.clf = clf
         
     def forward(self, x):
-        x = self.featnet_1(x)
+        x = self.resnet(x)
         x = self.refinenets(x)
         x = self.clf(x)
         return x
 
-def net(weights_dir=None, **kwargs):
-    featnet_1 = Featnet_1()
-    refinenets = Refinenets()
-    clf = Clf()
+def refinenet_resnet101(weights_dir=None, **kwargs):
     if weights_dir:
-        featnet_1.load_state_dict(torch.load(os.path.join(weights_dir, 'featnet_1.pth')))
-        refinenets.load_state_dict(torch.load(os.path.join(weights_dir, 'refinenets.pth')))
-        clf.load_state_dict(torch.load(os.path.join(weights_dir, 'clf.pth')))
-    return Net(featnet_1, refinenets, clf)
+        model = RefineNet_ResNet(
+            resnet101(os.path.join(weights_dir, 'resnet101.pth')),
+            refinenets(os.path.join(weights_dir, 'refinenets.pth')),
+            clf(os.path.join(weights_dir, 'clf.pth'))) 
+    else:
+        model = RefineNet_ResNet(Resnet101(), Refinenets(), Clf())
+    return model
