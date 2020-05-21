@@ -6,59 +6,14 @@ import zipfile
 
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
 from .vision import VisionDataset, ConcatVisionDataset, StackVisionDataset
-from .cityscapes import CityscapesInfo
+from .cityscapes import CityscapesInfo, Cityscapes__, Cityscapes_, Cityscapes
 from torch.utils.data import Subset
 # from utils.data import StackDataset, ConcatDataset
 from PIL import Image
 
+class FoggyCityscapesInfo(CityscapesInfo):
+    _repr_indent = VisionDataset._repr_indent
 
-class FoggyCityscapes__(ConcatVisionDataset, CityscapesInfo):
-    """`Cityscapes <http://www.cityscapes-dataset.com/>`_ Dataset.
-    Args:
-        root (string): Root directory of dataset where directory ``leftImg8bit``
-            and ``gtFine`` or ``gtCoarse`` are located.
-        split (string, optional): The image split to use, ``train``, ``test`` or ``val`` if mode="fine"
-            otherwise ``train``, ``train_extra`` or ``val``
-        image_mode (string, optional): The image mode to use, ``leftImg8bit``, ``gtFine`` or ``gtCoarse``
-        image_type (string, optional): Type of image to use, ``_instanceIds.png``, ``_labelIds.png``, 
-            ``_color.png`` or ``_polygons.json``.
-        image_transforms (list, callable, optional): A function/transform that takes sample as entry and
-            returns a transformed version. E.g, ``transforms.RandomCrop``
-    Examples:
-        Get semantic segmentation target
-        .. code-block:: python
-            dataset = Cityscapes('./data/cityscapes', split='train', image_mode='gtFine',
-                                 image_type='_labelIds.png')
-            smnt = dataset[0]
-        Validate on the "coarse" set
-        .. code-block:: python
-            dataset = Cityscapes('./data/cityscapes', split='val', mode='gtCoarse',
-                                 image_type='_labelIds.png')
-            smnt = dataset[0]
-    """
-    def __init__(self, root, split='train', # cities
-                 image_mode='leftImg8bit', image_type='_leftImg8bit.png', image_transforms=None,
-                ):
-        self.root = root
-        self.split = split
-
-        image_mode, image_type = self.verify_mode_type(split, image_mode, image_type)
-        self.image_mode = image_mode
-        self.image_type = image_type
-        
-        self.image_transforms = image_transforms
-        
-        self.images_dir = os.path.join(image_mode, split)
-        self.verify_dataset()
-        
-        convert = 'L' if 'Ids.png' in image_type else 'RGB'
-        if '.json' in image_type and transform is None:
-            image_transforms = transforms.Lambda(lambda x: self._load_json(x))
-                
-        dataset = [VisionDataset(root, os.path.join(self.images_dir, city), image_type, convert, image_transforms) 
-                   for city in sorted(glob.glob(os.path.join(root, self.images_dir, '*')))]
-        super(FoggyCityscapes__, self).__init__(dataset)
-        
     def verify_mode(self, image_mode):
         valid_modes = ("gtFine", "gtFine",
                        "gtCoarse", "gtCoarse",
@@ -143,97 +98,19 @@ class FoggyCityscapes__(ConcatVisionDataset, CityscapesInfo):
                 raise RuntimeError('Dataset not found or incomplete. Please make sure all required folders for the'
                                    ' specified "split" and "image_mode" are inside the "root" directory')
         
-    def extra_repr(self):
-        lines = ["Split: {split}", "Mode: {image_mode}", "Type: {image_type}"]
-        return '\n'.join(lines).format(**self.__dict__)
+
+class FoggyCityscapes__(Cityscapes__, FoggyCityscapesInfo): pass
     
     
-class FoggyCityscapes_(StackVisionDataset, CityscapesInfo):
-    _repr_indent = VisionDataset._repr_indent
-    verify_mode = FoggyCityscapes__.verify_mode
-    verify_mode_type = FoggyCityscapes__.verify_mode_type
-    verify_dataset = FoggyCityscapes__.verify_dataset
-    
-    def __init__(self, root, split='train', # cities
-                 image_mode='leftImg8bit', image_types=['_leftImg8bit.png'], image_transforms=None,
-                ):
-        self.root = root
-        self.split = split
+class FoggyCityscapes_(FoggyCityscapesInfo, Cityscapes_):
+    Cityscapes__ = FoggyCityscapes__
 
-        image_mode = self.verify_mode(image_mode)
-        _, image_types = list(zip(*[self.verify_mode_type(split, image_mode, image_type) for image_type in image_types]))
-        self.image_mode = image_mode
-        self.image_types = image_types
-        
-        image_transforms = (image_transforms 
-                            if isinstance(image_transforms, list)
-                            else [image_transforms for _type in image_types])
-        assert len(image_transforms) == len(image_types), (
-            "list image_transforms should have same length with image_types")
-        self.image_transforms = image_transforms
-        
-        self.images_dir = os.path.join(image_mode, split)
-        self.verify_dataset()
-        
-        dataset = [FoggyCityscapes__(root, split, image_mode, image_type, image_transforms)
-                   for image_type, image_transforms in zip(self.image_types, self.image_transforms)] 
-        super(FoggyCityscapes_, self).__init__(dataset)
-        
-    def extra_repr(self):
-        lines = ["Split: {split}", "Mode: {image_mode}", "Types: {image_types}"]
-        return '\n'.join(lines).format(**self.__dict__)
 
-    @property
-    def images(self):
-        return list(zip(*[dataset.images for dataset in self.datasets]))
+class FoggyCityscapes(FoggyCityscapesInfo, Cityscapes):
+    Cityscapes_ = FoggyCityscapes_
 
     
-class FoggyCityscapes(StackVisionDataset, CityscapesInfo):
-    _repr_indent = VisionDataset._repr_indent
-    verify_mode = FoggyCityscapes_.verify_mode
-    verify_mode_type = FoggyCityscapes_.verify_mode_type
-    verify_dataset = FoggyCityscapes_.verify_dataset
-    
-    def __init__(self, root, split='train', # cities
-                 image_modes=['leftImg8bit'], image_types=[['_leftImg8bit.png']], image_transforms=None,
-                ):
-        self.root = root
-        self.split = split
-
-        image_modes = [self.verify_mode(image_mode) for image_mode in image_modes]
-        _, image_types = list(zip(*[    list(zip(*[self.verify_mode_type(split, image_mode, image_type) 
-                                                   for image_type in _types]))
-                                    for image_mode, _types in zip(image_modes, image_types)]))
-        assert len(image_modes) == len(image_types), "image_modes and image_types should have same length"
-        self.image_modes = image_modes
-        self.image_types = image_types
-
-        image_transforms = (image_transforms 
-                            if isinstance(image_transforms, list)
-                            else [image_transforms for _mode in image_modes])
-        assert len(image_transforms) == len(image_types), (
-            "list image_transforms should have same length with image_types")
-        self.image_transforms = image_transforms
-            
-        cityscapes_ = [FoggyCityscapes_(root, split, _mode, _types, _transforms)
-                       for _mode, _types, _transforms in zip(image_modes, image_types, self.image_transforms)]
-
-        super(FoggyCityscapes, self).__init__(cityscapes_)
-    
-    def extra_repr(self):
-        lines = ["Split: {split}", "Modes: {image_modes}", "Types: {image_types}"]
-        return '\n'.join(lines).format(**self.__dict__)
-
-    @property
-    def images(self):
-        return list(zip(*[dataset.images for dataset in self.datasets]))
-
-    
-class RefinedFoggyCityscapes(Subset, CityscapesInfo):
-    _repr_indent = VisionDataset._repr_indent
-    verify_mode = FoggyCityscapes.verify_mode
-    verify_mode_type = FoggyCityscapes.verify_mode_type
-    verify_dataset = FoggyCityscapes.verify_dataset
+class RefinedFoggyCityscapes(Subset, FoggyCityscapesInfo):
     __repr__ = FoggyCityscapes.__repr__
     _format_transform_repr = VisionDataset._format_transform_repr
     extra_repr = FoggyCityscapes.extra_repr
