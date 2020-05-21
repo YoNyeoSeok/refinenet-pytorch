@@ -132,8 +132,8 @@ class Cityscapes__(VisionDataset, CityscapesInfo):
         else:
             super(Cityscapes__, self).__init__(root, self.images_dir, image_type, transform=image_transform)
         
-        self.images = [file_name for file_name
-                       in glob.glob(os.path.join(self.root, self.images_dir, '*', '*{}'.format(self.image_type)))]
+        self.images = sorted([file_name for file_name
+                              in glob.glob(os.path.join(self.root, self.images_dir, '*', '*{}'.format(self.image_type)))])
         
     def __repr__(self):
         head = "VisionDataset " + self.__class__.__name__

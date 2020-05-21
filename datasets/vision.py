@@ -36,9 +36,9 @@ class VisionDataset(Dataset):
             raise RuntimeError('Dataset not found or incomplete. Please make sure'
                                'the "images_dir" directory is exist')
 
-        self.images = [os.path.join(self.root, self.images_dir, file_name)
-                       for file_name in os.listdir(os.path.join(self.root, self.images_dir))
-                       if substring in file_name]
+        self.images = sorted([os.path.join(self.root, self.images_dir, file_name)
+                              for file_name in os.listdir(os.path.join(self.root, self.images_dir))
+                              if substring in file_name])
 
     def __getitem__(self, index):
         """

@@ -129,8 +129,8 @@ class FoggyCityscapes__(VisionDataset, CityscapesInfo):
         else:
             super(FoggyCityscapes__, self).__init__(root, self.images_dir, image_type, transform=image_transform)
         
-        self.images = [file_name for file_name
-                       in glob.glob(os.path.join(self.root, self.images_dir, '*', '*{}'.format(self.image_type)))]
+        self.images = sorted([file_name for file_name
+                              in glob.glob(os.path.join(self.root, self.images_dir, '*', '*{}'.format(self.image_type)))])
         
     def __repr__(self):
         head = "VisionDataset " + self.__class__.__name__
@@ -151,7 +151,7 @@ class FoggyCityscapes__(VisionDataset, CityscapesInfo):
         with open(path, 'r') as file:
             data = json.load(file)
         return data
-
+    
     
 class FoggyCityscapes_(StackDataset, CityscapesInfo):
     _repr_indent = VisionDataset._repr_indent
@@ -179,6 +179,10 @@ class FoggyCityscapes_(StackDataset, CityscapesInfo):
     def extra_repr(self):
         lines = ["Split: {split}", "Mode: {image_mode}", "Types: {image_types}"]
         return '\n'.join(lines).format(**self.__dict__)
+
+    @property
+    def images(self):
+        return list(zip(*[dataset.images for dataset in self.datasets]))
 
     
 class FoggyCityscapes(StackDataset, CityscapesInfo):
@@ -209,3 +213,7 @@ class FoggyCityscapes(StackDataset, CityscapesInfo):
     def extra_repr(self):
         lines = ["Split: {split}", "Modes: {image_modes}", "Types: {image_types}"]
         return '\n'.join(lines).format(**self.__dict__)
+
+    @property
+    def images(self):
+        return list(zip(*[dataset.images for dataset in self.datasets]))
