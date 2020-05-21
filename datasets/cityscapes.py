@@ -1,47 +1,15 @@
 import json
 import os
+import glob
 from collections import namedtuple
 import zipfile
 
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
-from torchvision.datasets.vision import VisionDataset
+from .vision import VisionDataset
+from utils.data import StackDataset, ConcatDataset
 from PIL import Image
 
-
-class EnvCityscapes(VisionDataset):
-    """`Cityscapes <http://www.cityscapes-dataset.com/>`_ Dataset.
-    Args:
-        root (string): Root directory of dataset where directory ``leftImg8bit``
-            and ``gtFine`` or ``gtCoarse`` are located.
-        split (string, optional): The image split to use, ``train``, ``test`` or ``val`` if mode="fine"
-            otherwise ``train``, ``train_extra`` or ``val``
-        mode (string, optional): The quality mode to use, ``fine`` or ``coarse``
-        target_type (string or list, optional): Type of target to use, ``instance``, ``semantic``, ``polygon``
-            or ``color``. Can also be a list to output a tuple with all specified target types.
-        transform (callable, optional): A function/transform that takes in a PIL image
-            and returns a transformed version. E.g, ``transforms.RandomCrop``
-        target_transform (callable, optional): A function/transform that takes in the
-            target and transforms it.
-        transforms (callable, optional): A function/transform that takes input sample and its target as entry
-            and returns a transformed version.
-    Examples:
-        Get semantic segmentation target
-        .. code-block:: python
-            dataset = Cityscapes('./data/cityscapes', split='train', mode='fine',
-                                 target_type='semantic')
-            img, smnt = dataset[0]
-        Get multiple targets
-        .. code-block:: python
-            dataset = Cityscapes('./data/cityscapes', split='train', mode='fine',
-                                 target_type=['instance', 'color', 'polygon'])
-            img, (inst, col, poly) = dataset[0]
-        Validate on the "coarse" set
-        .. code-block:: python
-            dataset = Cityscapes('./data/cityscapes', split='val', mode='coarse',
-                                 target_type='semantic')
-            img, smnt = dataset[0]
-    """
-
+class CityscapesInfo:
     # Based on https://github.com/mcordts/cityscapesScripts
     CityscapesClass = namedtuple('CityscapesClass', ['name', 'id', 'train_id', 'category', 'category_id',
                                                      'has_instances', 'ignore_in_eval', 'color'])
@@ -83,165 +51,164 @@ class EnvCityscapes(VisionDataset):
         CityscapesClass('bicycle', 33, 18, 'vehicle', 7, True, False, (119, 11, 32)),
         CityscapesClass('license plate', -1, -1, 'vehicle', 7, False, True, (0, 0, 142)),
     ]
+    
 
-    def __init__(self, root, env='', env_type='', split='train', mode='fine', target_type='instance',
-                 transform=None, target_transform=None, transforms=None):
-        super(EnvCityscapes, self).__init__(root, transforms, transform, target_transform)
-        self.mode = 'gtFine' if mode == 'fine' else 'gtCoarse'
-        self.images_dir = os.path.join(self.root, 'leftImg8bit', split)
-        self.targets_dir = os.path.join(self.root, self.mode, split)
-        self.target_type = target_type
-        self.split = split
-        self.images = []
-        self.targets = []
-        self.env = env
-        self.env_type = env_type
-
-        if not isinstance(env, list):
-            self.env = [env]
-        [verify_str_arg(value, "env", ("", "transmittanceDBF", "foggy", "foggyDBF"))
-         for value in self.env]
-        valid_env_type = {"": ("",),
-                          "transmittanceDBF": ("beta_0.005", "beta_0.01", "beta_0.02"),
-                          "foggy": ("beta_0.005", "beta_0.01", "beta_0.02"),
-                          "foggyDBF": ("beta_0.005", "beta_0.01", "beta_0.02")}
+class Cityscapes__(VisionDataset, CityscapesInfo):
+    """`Cityscapes <http://www.cityscapes-dataset.com/>`_ Dataset.
+    Args:
+        root (string): Root directory of dataset where directory ``leftImg8bit``
+            and ``gtFine`` or ``gtCoarse`` are located.
+        split (string, optional): The image split to use, ``train``, ``test`` or ``val`` if mode="fine"
+            otherwise ``train``, ``train_extra`` or ``val``
+        image_mode (string, optional): The image mode to use, ``leftImg8bit``, ``gtFine`` or ``gtCoarse``
+        image_type (string, optional): Type of image to use, ``_instanceIds.png``, ``_labelIds.png``, 
+            ``_color.png`` or ``_polygons.json``.
+        image_transforms (list, callable, optional): A function/transform that takes sample as entry and
+            returns a transformed version. E.g, ``transforms.RandomCrop``
+    Examples:
+        Get semantic segmentation target
+        .. code-block:: python
+            dataset = Cityscapes('./data/cityscapes', split='train', image_mode='gtFine',
+                                 image_type='_labelIds.png')
+            smnt = dataset[0]
+        Validate on the "coarse" set
+        .. code-block:: python
+            dataset = Cityscapes('./data/cityscapes', split='val', mode='gtCoarse',
+                                 image_type='_labelIds.png')
+            smnt = dataset[0]
+    """
+    def __init__(self, root, split='train', # cities
+                 image_mode='leftImg8bit', image_type='_leftImg8bit.png', image_transform=None,
+                ):
+        verify_str_arg(image_mode, "image_mode", ("leftImg8bit", "gtFine", "gtCoarse"))
+        if image_mode == "gtFine":
+            valid_splits = ("train", "test", "val")
+            valid_types = ("_instanceIds.png", "_labelIds.png", "_color.png", "_polygons.json")
+        elif image_mode == "gtCoarse":
+            valid_splits = ("train", "train_extra", "val")
+            valid_types = ("_instanceIds.png", "_labelIds.png", "_color.png", "_polygons.json")
+        elif image_mode == "leftImg8bit":
+            valid_splits = ("train", "train_extra", "test", "val")
+            valid_types = ("_leftImg8bit.png",)
         
-        if not isinstance(env_type, list):
-            self.env_type = [env_type]
-        if len(self.env_type) != len(self.env):
-            if len(self.env) == 1:
-                self.env_type = [self.env_type for i in range(len(self.env))]
-            else:
-                assert False, 'len(env_type) != len(env)'
-        for i, e_t in enumerate(self.env_type):
-            if not isinstance(e_t, list):
-                self.env_type[i] = [e_t]
-        [[verify_str_arg(value, "env_type", valid_env_type[env])
-         for value in t]
-         for env, t in zip(self.env, self.env_type)]
-            
-        verify_str_arg(mode, "mode", ("fine", "coarse"))
-        if mode == "fine":
-            valid_modes = ("train", "test", "val")
-        else:
-            valid_modes = ("train", "train_extra", "val")
-        msg = ("Unknown value '{}' for argument split if mode is '{}'. "
+        msg = ("Unknown value '{}' for argument split if image_mode is '{}'. "
                "Valid values are {{{}}}.")
-        msg = msg.format(split, mode, iterable_to_str(valid_modes))
-        verify_str_arg(split, "split", valid_modes, msg)
-
-        if not isinstance(target_type, list):
-            self.target_type = [target_type]
-        [verify_str_arg(value, "target_type",
-                        ("instance", "semantic", "polygon", "color"))
-         for value in self.target_type]
-
-        if not os.path.isdir(self.images_dir) or not os.path.isdir(self.targets_dir):
-
-            if split == 'train_extra':
-                image_dir_zip = os.path.join(self.root, 'leftImg8bit{}{}'.format('_trainextra.zip'))
-            else:
-                image_dir_zip = os.path.join(self.root, 'leftImg8bit{}'.format('_trainvaltest.zip'))
-
-            if self.mode == 'gtFine':
-                target_dir_zip = os.path.join(self.root, '{}{}'.format(self.mode, '_trainvaltest.zip'))
-            elif self.mode == 'gtCoarse':
-                target_dir_zip = os.path.join(self.root, '{}{}'.format(self.mode, '.zip'))
-
-            if os.path.isfile(image_dir_zip) and os.path.isfile(target_dir_zip):
+        msg = msg.format(split, image_mode, iterable_to_str(valid_splits))
+        verify_str_arg(split, "split", valid_splits, msg)
+        
+        msg = ("Unknown value '{}' for argument image_type if image_mode is '{}'. "
+               "Valid values are {{{}}}.")
+        msg = msg.format(image_type, image_mode, iterable_to_str(valid_types))
+        verify_str_arg(image_type, "image_type", valid_types, msg)
+        
+        self.root = root
+        self.split = split
+        self.image_mode = image_mode
+        self.images_dir = os.path.join(image_mode, split)
+        
+        self.image_type = image_type
+        self.image_transform = image_transform
+        
+        if not os.path.isdir(os.path.join(self.root, self.images_dir)):
+            if self.image_mode == 'gtCoarse':
+                image_dir_zip = os.path.join(self.root, '{}{}'.format(self.image_mode, '.zip'))
+            elif self.image_mode == 'leftImg8bit':
+                if split == 'train_extra':
+                    image_dir_zip = os.path.join(self.root, '{}{}'.format(self.image_mode, '_trainextra.zip'))
+                else:
+                    image_dir_zip = os.path.join(self.root, '{}{}'.format(self.image_mode, '_trainvaltest.zip'))
+            
+            if os.path.isfile(image_dir_zip):
                 extract_archive(from_path=image_dir_zip, to_path=self.root)
                 extract_archive(from_path=target_dir_zip, to_path=self.root)
             else:
                 raise RuntimeError('Dataset not found or incomplete. Please make sure all required folders for the'
-                                   ' specified "split" and "mode" are inside the "root" directory')
-
-        for city in os.listdir(self.images_dir):
-            img_dir = os.path.join(self.images_dir, city)
-            target_dir = os.path.join(self.targets_dir, city)
-            for file_name in os.listdir(img_dir):
-                target_types = []
-                for t in self.target_type:
-                    target_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0],
-                                                 self._get_target_suffix(self.mode, t))
-                    target_types.append(os.path.join(target_dir, target_name))
-                    
-                env_types = []
-                for e, e_t in zip(self.env, self.env_type):
-                    for t in e_t:
-                        s = img_dir.split('leftImg8bit')
-                        env_img_dir = '{}leftImg8bit{}{}{}'.format(s[0], '_' if e else '', e, s[1])
-                        env_name = '{}_{}'.format(file_name.split('_leftImg8bit')[0],
-                                                  self._get_env_suffix(e, t))
-                        env_types.append(os.path.join(env_img_dir, env_name))
-
-#                 self.images.append(os.path.join(img_dir, file_name))
-                self.images.append(env_types)
-                self.targets.append(target_types)
-
-    def __getitem__(self, index):
-        """
-        Args:
-            index (int): Index
-        Returns:
-            tuple: (image, target)
-        """
+                                   ' specified "split" and "image_mode" are inside the "root" directory')
         
-        images = []
-        i = 0
-        for e, e_t in zip(self.env, self.env_type):
-            for t in enumerate(e_t):
-                if e == 'transmittanceDBF':
-                    image = Image.open(self.images[index][i]).convert('L')
-                else:
-                    image = Image.open(self.images[index][i]).convert('RGB')
-                images.append(image)
-                i += 1
-        image = tuple(images) if len(images) > 1 else images[0]
+        if 'Ids.png' in image_type:
+            super(Cityscapes__, self).__init__(root, self.images_dir, image_type, convert='L', transform=image_transform)
+        elif '.json' in image_type and image_transform is None:
+            super(Cityscapes__, self).__init__(root, self.images_dir, image_type, transform=self._load_json)
+        else:
+            super(Cityscapes__, self).__init__(root, self.images_dir, image_type, transform=image_transform)
         
-        targets = []
-        for i, t in enumerate(self.target_type):
-            if t == 'polygon':
-                target = self._load_json(self.targets[index][i])
-            else:
-                target = Image.open(self.targets[index][i])
-
-            targets.append(target)
-
-        target = tuple(targets) if len(targets) > 1 else targets[0]
-
-        if self.transforms is not None:
-            image, target = self.transforms(image, target)
-
-        return image, target
-
-    def __len__(self):
-        return len(self.images)
-
+        self.images = [file_name for file_name
+                       in glob.glob(os.path.join(self.root, self.images_dir, '*', '*{}'.format(self.image_type)))]
+        
+    def __repr__(self):
+        head = "VisionDataset " + self.__class__.__name__
+        body = ["Number of datapoints: {}".format(self.__len__())]
+        if self.root is not None:
+            body.append("Root location: {}".format(self.root))
+        body += self.extra_repr().splitlines()
+        if hasattr(self, "transforms") and self.transforms is not None:
+            body += [repr(self.transforms)]
+        lines = [head] + [" " * self._repr_indent + line for line in body]
+        return '\n'.join(lines)
+    
     def extra_repr(self):
-        lines = ["Env: {env}\t{env_type}", "Split: {split}", "Mode: {mode}", "Type: {target_type}"]
+        lines = ["Split: {split}", "Mode: {image_mode}", "Type: {image_type}"]
         return '\n'.join(lines).format(**self.__dict__)
-
+    
     def _load_json(self, path):
         with open(path, 'r') as file:
             data = json.load(file)
         return data
-    
-    def _get_env_suffix(self, env, env_type):
-        if env == "":
-            return 'leftImg8bit.png'
-        elif env == "transmittanceDBF":
-            return 'leftImg8bit_{}_{}.png'.format(env.rstrip('DBF'), env_type)
-        elif env == "foggy":
-            return 'leftImg8bit_{}_{}.png'.format(env, env_type)                                              
-        elif env == "foggyDBF":
-            return 'leftImg8bit_{}_{}.png'.format(env.rstrip('DBF'), env_type)
 
-    def _get_target_suffix(self, mode, target_type):
-        if target_type == 'instance':
-            return '{}_instanceIds.png'.format(mode)
-        elif target_type == 'semantic':
-            return '{}_labelIds.png'.format(mode)
-        elif target_type == 'color':
-            return '{}_color.png'.format(mode)
+    
+class Cityscapes_(StackDataset, CityscapesInfo):
+    _repr_indent = VisionDataset._repr_indent
+    
+    def __init__(self, root, split='train', # cities
+                 image_mode='leftImg8bit', image_types=['_leftImg8bit.png'], image_transforms=None,
+                ):
+        self.root = root
+        self.split = split
+        self.image_mode = image_mode
+        self.images_dir = os.path.join(image_mode, split)
+
+        self.image_types = image_types
+        
+        if isinstance(image_transforms, list):
+            assert len(image_transforms) == len(image_types), (
+                "list image_transforms should have same length with image_types")
+            self.image_transforms = image_transforms
         else:
-            return '{}_polygons.json'.format(mode)
+            self.image_transforms = [image_transforms for _type in image_types]
+        cityscapes__ = [Cityscapes__(root, split, image_mode, image_type=_types, image_transform=_transform)
+                        for _types, _transform in zip(self.image_types, self.image_transforms)] 
+        super(Cityscapes_, self).__init__(cityscapes__)
+
+    def extra_repr(self):
+        lines = ["Split: {split}", "Mode: {image_mode}", "Types: {image_types}"]
+        return '\n'.join(lines).format(**self.__dict__)
+
+    
+class Cityscapes(StackDataset, CityscapesInfo):
+    _repr_indent = VisionDataset._repr_indent
+    
+    def __init__(self, root, split='train', # cities
+                 image_modes=['leftImg8bit'], image_types=[['_leftImg8bit.png']], image_transforms=None,
+                ):
+        self.root = root
+        self.split = split
+        self.image_modes = image_modes
+        self.image_types = image_types
+        assert len(image_modes) == len(image_types), "image_modes and image_types should have same length"
+        
+        if isinstance(image_transforms, list):
+            assert len(image_transforms) == len(image_modes), (
+                "list image_transforms should have same length with image_modes")
+            self.image_transforms = image_transforms
+        else:
+            self.image_transforms = [image_transforms for _type in image_modes]
+            
+        print(self.image_modes, self.image_types, self.image_transforms)
+        cityscapes_ = [Cityscapes_(root, split, _mode, _types, _transforms)
+                       for _mode, _types, _transforms in zip(image_modes, image_types, self.image_transforms)]
+
+        super(Cityscapes, self).__init__(cityscapes_)
+    
+    def extra_repr(self):
+        lines = ["Split: {split}", "Modes: {image_modes}", "Types: {image_types}"]
+        return '\n'.join(lines).format(**self.__dict__)

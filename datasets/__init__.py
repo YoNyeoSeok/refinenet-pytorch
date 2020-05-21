@@ -1,3 +1,4 @@
-from .cityscapes import EnvCityscapes
+from .cityscapes import Cityscapes
 from .zurich import Zurich
-from torchvision.datasets import *
+from .vision import VisionDataset
+# from torchvision.datasets import *
