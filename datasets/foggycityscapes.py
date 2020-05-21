@@ -7,6 +7,7 @@ import zipfile
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
 from .vision import VisionDataset
 from .cityscapes import CityscapesInfo
+from torch.utils.data import Subset
 from utils.data import StackDataset, ConcatDataset
 from PIL import Image
 
@@ -175,6 +176,9 @@ class FoggyCityscapes_(StackDataset, CityscapesInfo):
         cityscapes__ = [FoggyCityscapes__(root, split, image_mode, image_type=_types, image_transform=_transform)
                         for _types, _transform in zip(self.image_types, self.image_transforms)] 
         super(FoggyCityscapes_, self).__init__(cityscapes__)
+        
+    def __repr__(self):
+        return FoggyCityscapes__.__repr__(self)
 
     def extra_repr(self):
         lines = ["Split: {split}", "Mode: {image_mode}", "Types: {image_types}"]
@@ -204,12 +208,14 @@ class FoggyCityscapes(StackDataset, CityscapesInfo):
         else:
             self.image_transforms = [image_transforms for _type in image_modes]
             
-        print(self.image_modes, self.image_types, self.image_transforms)
         cityscapes_ = [FoggyCityscapes_(root, split, _mode, _types, _transforms)
                        for _mode, _types, _transforms in zip(image_modes, image_types, self.image_transforms)]
 
         super(FoggyCityscapes, self).__init__(cityscapes_)
     
+    def __repr__(self):
+        return FoggyCityscapes_.__repr__(self)
+
     def extra_repr(self):
         lines = ["Split: {split}", "Modes: {image_modes}", "Types: {image_types}"]
         return '\n'.join(lines).format(**self.__dict__)
@@ -217,3 +223,40 @@ class FoggyCityscapes(StackDataset, CityscapesInfo):
     @property
     def images(self):
         return list(zip(*[dataset.images for dataset in self.datasets]))
+
+    
+class RefinedFoggyCityscapes(Subset, CityscapesInfo):
+    _repr_indent = VisionDataset._repr_indent
+    
+    def __init__(self, root, split='train', # cities
+                 image_modes=['leftImg8bit'], image_types=[['_leftImg8bit.png']], image_transforms=None,
+                 refined_filenames='foggy_trainval_refined_filenames.txt'):
+        self.root = root
+        self.split = split
+        self.image_modes = image_modes
+        self.image_types = image_types
+        self.image_transforms = image_transforms
+        self.refined_filenames = refined_filenames
+        
+        cityscapes = FoggyCityscapes(root, split, image_modes, image_types, image_transforms)
+        
+        if os.path.isfile(os.path.join(root, refined_filenames)):
+            with open(os.path.join(root, refined_filenames)) as f:
+                lines = list(map(str.strip, f.readlines()))            
+            indices = [a for a, ((img, ), _) in enumerate(cityscapes.images) for line in sorted(lines) if line in img]
+        else:
+            raise RuntimeError('refined_filenames are not found or incomplete. Please make sure the required file'
+                                'is inside the "root" directory')
+
+        super(RefinedFoggyCityscapes, self).__init__(cityscapes, indices)
+        
+    def __repr__(self):
+        return FoggyCityscapes.__repr__(self)
+
+    def extra_repr(self):
+        lines = ["Split: {split}", "Modes: {image_modes}", "Types: {image_types}"]
+        return '\n'.join(lines).format(**self.__dict__)
+
+    @property
+    def images(self):
+        return FoggyCityscapes.images(self)
