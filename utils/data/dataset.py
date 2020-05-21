@@ -3,6 +3,7 @@ from torch.utils import data
 class ConcatDataset(data.ConcatDataset):
     def __init__(self, *args, **kwds):
         super(ConcatDataset, self).__init__(*args, **kwds)
+        
     def __repr__(self):
         head = "ConcatDataset " + self.__class__.__name__
         lines = [head] + [repr(dataset) for dataset in self.datasets]
