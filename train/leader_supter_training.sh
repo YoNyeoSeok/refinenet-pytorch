@@ -1,0 +1,3 @@
+env /opt/conda/envs/py37torch15/bin/python /home/user/research/refinenet-pytorch/train/leader_supter_training.py --foggy_beta beta_0.005 --total-epoch 1 --gpu 0 # --use-wandb
+# env /opt/conda/envs/py37torch15/bin/python /home/user/research/refinenet-pytorch/train/leader_supter_training.py --foggy_beta beta_0.01 --total-epoch 36 --gpu 1 --use-wandb
+# env /opt/conda/envs/py37torch15/bin/python /home/user/research/refinenet-pytorch/train/leader_supter_training.py --foggy_beta beta_0.02 --total-epoch 36 --gpu 1 --use-wandb
