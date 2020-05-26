@@ -12,8 +12,6 @@ from torch.utils.data import Subset
 from PIL import Image
 
 class FoggyCityscapesInfo(CityscapesInfo):
-    _repr_indent = VisionDataset._repr_indent
-
     def verify_mode(self, image_mode):
         valid_modes = ("gtFine", "gtFine",
                        "gtCoarse", "gtCoarse",
@@ -72,8 +70,10 @@ class FoggyCityscapesInfo(CityscapesInfo):
         msg = msg.format(image_type, image_mode, iterable_to_str(valid_types))
         verify_str_arg(image_type, "image_type", valid_types, msg)
         return image_mode, image_type
-    
-    def verify_dataset(self):
+
+
+class FoggyCityscapes__(Cityscapes__, FoggyCityscapesInfo):
+    def verify_dataset(self, split):
         if not os.path.isdir(os.path.join(self.root, self.images_dir)):
             if self.image_mode == 'gtFine':
                 image_dir_zip = os.path.join(self.root, '{}_trainvaltest.zip'.format(self.image_mode))
@@ -93,13 +93,9 @@ class FoggyCityscapesInfo(CityscapesInfo):
                 
             if os.path.isfile(image_dir_zip):
                 extract_archive(from_path=image_dir_zip, to_path=self.root)
-                extract_archive(from_path=target_dir_zip, to_path=self.root)
             else:
                 raise RuntimeError('Dataset not found or incomplete. Please make sure all required folders for the'
                                    ' specified "split" and "image_mode" are inside the "root" directory')
-        
-
-class FoggyCityscapes__(Cityscapes__, FoggyCityscapesInfo): pass
     
     
 class FoggyCityscapes_(FoggyCityscapesInfo, Cityscapes_):
@@ -130,7 +126,7 @@ class RefinedFoggyCityscapes(Subset, FoggyCityscapesInfo):
         if os.path.isfile(os.path.join(root, refined_filenames)):
             with open(os.path.join(root, refined_filenames)) as f:
                 lines = list(map(str.strip, f.readlines()))            
-            indices = [a for a, ((img, ), _) in enumerate(cityscapes.images) for line in sorted(lines) if line in img]
+            indices = [a for a, img in enumerate(cityscapes.images) for line in sorted(lines) if line in img[0][0]]
         else:
             raise RuntimeError('refined_filenames are not found or incomplete. Please make sure the required file'
                                 'is inside the "root" directory')

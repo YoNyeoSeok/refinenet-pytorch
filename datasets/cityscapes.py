@@ -5,6 +5,7 @@ from collections import namedtuple
 import zipfile
 
 from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable_to_str
+from torchvision import transforms
 from .vision import VisionDataset, ConcatVisionDataset, StackVisionDataset
 # from utils.data import StackDataset, ConcatDataset
 from PIL import Image
@@ -98,25 +99,6 @@ class CityscapesInfo:
         verify_str_arg(image_type, "image_type", valid_types, msg)
         return image_mode, image_type
     
-    def verify_dataset(self):
-        if not os.path.isdir(os.path.join(self.root, self.images_dir)):
-            if self.image_mode == 'gtFine':
-                image_dir_zip = os.path.join(self.root, '{}_trainvaltest.zip'.format(self.image_mode))
-            elif self.image_mode == 'gtCoarse':
-                image_dir_zip = os.path.join(self.root, '{}.zip'.format(self.image_mode))
-            else:
-                if split == 'train_extra':
-                    image_dir_zip = os.path.join(self.root, '{}_trainextra.zip'.format(self.image_mode))
-                else:
-                    image_dir_zip = os.path.join(self.root, '{}_trainvaltest.zip'.format(self.image_mode))
-                
-            if os.path.isfile(image_dir_zip):
-                extract_archive(from_path=image_dir_zip, to_path=self.root)
-                extract_archive(from_path=target_dir_zip, to_path=self.root)
-            else:
-                raise RuntimeError('Dataset not found or incomplete. Please make sure all required folders for the'
-                                   ' specified "split" and "image_mode" are inside the "root" directory')
-
     def _load_json(self, path):
         with open(path, 'r') as file:
             data = json.load(file)
@@ -159,10 +141,9 @@ class Cityscapes__(ConcatVisionDataset, CityscapesInfo):
         self.image_transforms = image_transforms
         
         self.images_dir = os.path.join(image_mode, split)
-        self.verify_dataset()
         
         convert = 'L' if 'Ids.png' in image_type else 'RGB'
-        if '.json' in image_type and transform is None:
+        if '.json' in image_type and image_transforms is None:
             image_transforms = transforms.Lambda(lambda x: self._load_json(x))
                 
         datasets = [VisionDataset(root, os.path.join(self.images_dir, city), image_type, convert, image_transforms) 
@@ -172,6 +153,24 @@ class Cityscapes__(ConcatVisionDataset, CityscapesInfo):
     def extra_repr(self):
         lines = ["Split: {split}", "Mode: {image_mode}", "Type: {image_type}"]
         return '\n'.join(lines).format(**self.__dict__)
+        
+    def verify_dataset(self):
+        if not os.path.isdir(os.path.join(self.root, self.images_dir)):
+            if self.image_mode == 'gtFine':
+                image_dir_zip = os.path.join(self.root, '{}_trainvaltest.zip'.format(self.image_mode))
+            elif self.image_mode == 'gtCoarse':
+                image_dir_zip = os.path.join(self.root, '{}.zip'.format(self.image_mode))
+            else:
+                if self.split == 'train_extra':
+                    image_dir_zip = os.path.join(self.root, '{}_trainextra.zip'.format(self.image_mode))
+                else:
+                    image_dir_zip = os.path.join(self.root, '{}_trainvaltest.zip'.format(self.image_mode))
+                
+            if os.path.isfile(image_dir_zip):
+                extract_archive(from_path=image_dir_zip, to_path=self.root)
+            else:
+                raise RuntimeError('Dataset not found or incomplete. Please make sure all required folders for the'
+                                   ' specified "split" and "image_mode" are inside the "root" directory')
     
     
 class Cityscapes_(StackVisionDataset, CityscapesInfo):    
@@ -195,7 +194,6 @@ class Cityscapes_(StackVisionDataset, CityscapesInfo):
         self.image_transforms = image_transforms
         
         self.images_dir = os.path.join(image_mode, split)
-        self.verify_dataset()
         
         datasets = [self.Cityscapes__(root, split, image_mode, image_type, image_transforms)
                     for image_type, image_transforms in zip(self.image_types, self.image_transforms)] 
