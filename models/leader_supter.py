@@ -4,6 +4,7 @@ import os
 import numpy as np
 import tqdm
 import argparse
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
@@ -12,14 +13,24 @@ from torchvision import transforms as trf
 # from torchvision.models._utils import IntermediateLayerGetter
 # from models.refinenet_resnet import refinenet_resnet101
 
-class LeaderSupterModel(nn.Module):
-    def __init__(self, leader_model, supter_model):
-        super(LeaderSupterModel, self).__init__()
-        assert leader_model != supter_model
-        self.leader_model = leader_model
-        self.supter_model = supter_model
+class LeaderSupterModel(nn.ModuleDict):
+    def __init__(
+        self, leader_model, supter_model,
+        cuda_mapping={
+            'leader_model': 'cpu',
+            'supter_model': 'cpu',}):
+        super(LeaderSupterModel, self).__init__({
+            'leader_model': leader_model,
+            'supter_model': supter_model,})
+        assert self['leader_model'] != self['supter_model']
+        self['leader_model'].to(cuda_mapping['leader_model'])
+        self['supter_model'].to(cuda_mapping['supter_model'])
+        self['supter_model'].eval()
+        self.cuda_mapping = cuda_mapping
     def forward(self, input):
-        return self.leader_model(input)
+        return (
+            self['leader_model'](input.to(self.cuda_mapping['leader_model'])),
+            self['supter_model'](input.to(self.cuda_mapping['supter_model'])),)
     def update_supter(self):
         self.supter_model.load_state_dict(self.leader_model.state_dict()).eval()
     def train(self, mode=True):
@@ -38,28 +49,44 @@ class LeaderSupterModelCriteria(nn.Module):
         # pylint: enable=E1101
 
     def forward(self, input, target=None):
+        leader_logit, supter_logit = self.leader_supter_model(input)
         # pylint: disable=E1101
         supter_target_loss = torch.stack([
-            self.supter_criteria(
-                self.leader_supter_model.leader_model(input),
-                self.leader_supter_model.supter_model(input),),
+            self.supter_criteria(leader_logit, supter_logit.to(leader_logit.device),),
             torch.FloatTensor(0) if target is None else
-            self.target_criteria(
-                self.leader_supter_model.leader_model(input), target),
+            self.target_criteria(leader_logit, target.to(leader_logit.device)),
         ])
         # pylint: enable=E1101
         return supter_target_loss @ self.supter_target_weight.to(supter_target_loss.device)
 
-# class CudaChilderenLayer(nn.Module):
-#     def __init__(self, mapping_dict, *args, **kwds):
-#         super(CudaChilderenLayer, self, ).__init__(*args, **kwds)
-#         assert set([name for name, _ in self.named_children()]) == set(list(mapping_dict.keys())) 
-#         self.mapping_dict = mapping_dict
-#     def forward(self, input):
-#         x = input
-#         for name, child in self.named_children():
-#             x = child(x.to(self.mapping_dict[name]))
-#         return x
+    def state_dict(self):
+        return self.leader_supter_model.state_dict()
+
+class CudaInputLayer(nn.Module):
+    def __init__(self, ):
+        super(CudaInputLayer)
+
+class CudaChildrenLayer(nn.Sequential):
+    def __init__(self, mapping_dict, *args, **kwds):
+        super(CudaChildrenLayer, self, ).__init__(*args, **kwds)
+        assert set([name for name, _ in self.named_children()]) == set(list(mapping_dict.keys())) 
+        # self.model = model
+        self.mapping_dict = mapping_dict
+        # for name, child in self.named_children():
+        #     self.__setattr__(name, CudaChildrenLayer(
+        #         {k: mapping_dict[name] for k, _ in child.named_children()},
+        #         OrderedDict([(k, v) for k, v in child.named_children()])))
+        #     assert name != model
+        #     self.__setattr__(name, child)
+    def forward(self, input):
+        x = input
+        if isinstance(self, LeaderSupterModel):
+            self['LeaderSupterModel'] = CudaChildrenLayer(self['LeaderSupterModel'])
+        for name, child in self.named_children():
+            x = child(x.to(self.mapping_dict[name]))
+        return x
+    def state_dict(self):
+        return self.model.state_dict()
 
 class ReturnChildLayer(nn.Module):
     def __init__(self, *args, **kwds):
