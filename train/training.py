@@ -115,6 +115,9 @@ class ModelCriteria(torch.nn.Module):
     def forward(self, input, target):
         return self.criteria(self.model(input), target)
 
+    def state_dict(self):
+        return self.model.state_dict()
+
 
 class ModelOptimizer(torch.nn.Module):
     def __init__(self, model_criteria, optimizer):
@@ -196,7 +199,7 @@ def eval_model(model_criteria, valid_dl, wandb_log, args):
     eval_loss /= len(valid_dl)
     pbar.write("Valid Epoch Loss={:.4f}".format(eval_loss))
     if wandb_log.use_wandb:
-        torch.save(model_criteria.model.state_dict(), os.path.join(wandb.run.dir, 'state_dict.{:02d}.pth').format(wandb_log.valid_epoch_step))
+        torch.save(model_criteria.state_dict(), os.path.join(wandb.run.dir, 'state_dict.{:02d}.pth').format(wandb_log.valid_epoch_step))
     wandb_log.valid_epoch_log(eval_loss)
     return eval_loss
 
