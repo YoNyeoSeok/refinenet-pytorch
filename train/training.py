@@ -75,25 +75,30 @@ def load_train_valid_loader(args):
     return train_dl, valid_dl
 
 # train_dl, valid_dl = load_train_valid_loader(args)
+class InputOutputInterpolate(torch.nn.Module):
+    def __init__(self, model, scale_factor):
+        super(InputOutputInterpolate, self).__init__()
+        self.model = model
+        self.scale_factor = scale_factor
+
+    def forward(self, x):
+        shape = x.shape[-2:]
+        x = torch.nn.functional.interpolate(x, scale_factor=self.scale_factor, mode='bilinear')
+        out = self.model(x)
+        return torch.nn.functional.interpolate(out, shape, mode='bilinear')
+
 def load_model(args):
     model_pretrained_dir = '/home/user/research/refinenet-pytorch/pretrained/Cityscapes'
     model = refinenet_resnet101(model_pretrained_dir)
-    class InputOutputInterpolate(torch.nn.Module):
-        def __init__(self, model, scale_factor):
-            super(InputOutputInterpolate, self).__init__()
-            self.model = model
-            self.scale_factor = scale_factor
-
-        def forward(self, x):
-            shape = x.shape[-2:]
-            x = torch.nn.functional.interpolate(x, scale_factor=self.scale_factor, mode='bilinear')
-            out = self.model(x)
-            return torch.nn.functional.interpolate(out, shape, mode='bilinear')
-    model = InputOutputInterpolate(model, args.input_scale_factor)
     return model
 
+def load_training_model(load_model, args):
+    training_model = InputOutputInterpolate(load_model(args), args.input_scale_factor)
+    return training_model
+
 def load_model_criteria_optimizer(args):
-    model = load_model(args)
+    model = load_training_model(load_model, args)
+
     CELoss = torch.nn.CrossEntropyLoss()
     # L1Loss = torch.nn.L1Loss()
     # L2Loss = torch.nn.MSELoss()
