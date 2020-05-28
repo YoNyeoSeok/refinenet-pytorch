@@ -124,3 +124,7 @@ Session.vim
 *~
 # Auto-generated tag files
 tags
+train/wandb
+tests
+viz
+wandb
