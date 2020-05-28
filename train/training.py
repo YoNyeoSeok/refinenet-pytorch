@@ -46,6 +46,7 @@ def load_train_valid_loader(args):
     ])
     val_transform = trf.Compose([
         trf.ToTensor(),
+        trf.Lambda(lambda x: x*255-128),
     ])
     semantic_transform = trf.Compose([
         trf.Lambda(semantic2sparse),
