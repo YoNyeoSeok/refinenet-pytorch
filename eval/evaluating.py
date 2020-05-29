@@ -158,5 +158,5 @@ if __name__ == '__main__':
         parser=arg_parser(),
         name='evaluating',
         load_valid_test_loader=load_valid_test_loader,
-        load_model=training.load_model,
+        load_model=training.load_training_model,
         eval_model=eval_model)

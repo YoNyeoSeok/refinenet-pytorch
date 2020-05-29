@@ -24,10 +24,9 @@ import json
 def arg_parser(parser=argparse.ArgumentParser()):
     parser.add_argument('--wandb_id', type=str, default='3dlxt8tg')
     parser.add_argument('--valid_batch_size', type=int, default=3)
-    parser.add_argument('--test_batch_size', type=int, default=5)
+    parser.add_argument('--test_batch_size', type=int, default=2)
     parser.add_argument('--gpu', type=int, default=1)
     parser.add_argument('--use-wandb', action='store_true')
-    # parser.add_argument('--use-wandb', action='store_false')
     return parser
 
 def load_valid_test_loader(args):
@@ -79,28 +78,6 @@ def load_valid_test_loader(args):
     return valid_dl, test_dl
 
 # train_dl, valid_dl = load_train_valid_loader(args)
-def load_model(args):
-    cuda_mapping = {
-        'leader_model': 'cuda:0',
-        'supter_model': 'cuda:1'}
-    leader_supter_model = LeaderSupterModel(training.load_model(args), training.load_model(args), cuda_mapping=cuda_mapping)
-    return leader_supter_model
-    model_pretrained_dir = '/home/user/research/refinenet-pytorch/pretrained/Cityscapes'
-    model = refinenet_resnet101(model_pretrained_dir)
-    class InputOutputInterpolate(torch.nn.Module):
-        def __init__(self, model, scale_factor):
-            super(InputOutputInterpolate, self).__init__()
-            self.model = model
-            self.scale_factor = scale_factor
-
-        def forward(self, x):
-            shape = x.shape[-2:]
-            x = torch.nn.functional.interpolate(x, scale_factor=self.scale_factor, mode='bilinear')
-            out = self.model(x)
-            return torch.nn.functional.interpolate(out, shape, mode='bilinear')
-    model = InputOutputInterpolate(model, args.input_scale_factor)
-    return model
-
 class WandbLog():
     def __init__(self, use_wandb):
         self.use_wandb = use_wandb
@@ -131,7 +108,7 @@ def eval_model(model, valid_dl, test_dl, wandb_log, args):
         if wandb_log.use_wandb:
             for name, running_metrics in zip(['clear', 'beta_0.005', 'beta_0.01', 'beta_0.02', ], eval_running_metrics[:4]):
                 wandb_log.running_metrics_epoch_log(name, running_metrics)
-
+                
         pbar = tqdm.tqdm(enumerate(test_dl), total=len(test_dl))
         for _, (b_input, b_sparse, _, ) in pbar:
             b_sparse_pred = model(b_input.to(args.gpu)).argmax(1).cpu()
@@ -183,5 +160,5 @@ if __name__ == '__main__':
         parser=arg_parser(),
         name='leader_supter_evaluating',
         load_valid_test_loader=load_valid_test_loader,
-        load_model=leader_supter_training.load_model,
+        load_model=leader_supter_training.load_leader_supter_model,
         eval_model=eval_model)
