@@ -164,7 +164,7 @@ def main(parser, name, load_valid_test_loader, load_model, eval_model):
         args.input_scale_factor = float(metadata['input_scale_factor']['value'])
 
     valid_dl, test_dl = load_valid_test_loader(args)
-    valid_dl.dataset.indices = valid_dl.dataset.indices[:18]
+    # valid_dl.dataset.indices = valid_dl.dataset.indices[:18]
     # test_dl.dataset.images = test_dl.dataset.images[:3]
     print('dataset loaded')
     model = load_model(args).cpu()
@@ -183,5 +183,5 @@ if __name__ == '__main__':
         parser=arg_parser(),
         name='leader_supter_evaluating',
         load_valid_test_loader=load_valid_test_loader,
-        load_model=leader_supter_training.load_model,
+        load_model=leader_supter_training.load_leader_supter_model,
         eval_model=eval_model)

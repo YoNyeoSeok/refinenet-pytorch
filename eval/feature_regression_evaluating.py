@@ -93,11 +93,8 @@ class WandbLog():
                 {' '.join([str(class_IoU), name, ]): value for class_IoU, value in per_class_IoU.items()},
                 step=self.running_metrics_epoch_step,)
 
-def eval_model(feature_regression_model, valid_dl, test_dl, wandb_log, args):
-    model = feature_regression_training.training.InputOutputInterpolate(
-        feature_regression_model.model['model'],
-        args.input_scale_factor)
-    model.to(args.gpu)
+def eval_model(model, valid_dl, test_dl, wandb_log, args):
+    # model.to(args.gpu)
     model.eval()
     eval_running_metrics = [runningScore(20) for i in range(5)]
     with torch.no_grad():
@@ -146,10 +143,10 @@ def main(parser, name, load_valid_test_loader, load_feature_regression_model, ev
         args.feature_regression_target_weight = metadata['feature_regression_target_weight']['value']
 
     valid_dl, test_dl = load_valid_test_loader(args)
-    valid_dl.dataset.indices = valid_dl.dataset.indices[:18]
+    # valid_dl.dataset.indices = valid_dl.dataset.indices[:18]
     # test_dl.dataset.images = test_dl.dataset.images[:3]
     print('dataset loaded')
-    model = load_feature_regression_model(args).cpu()
+    feature_regression_model = load_feature_regression_model(args).cpu()
     print('model loaded')
     wandb_log = WandbLog(args.use_wandb)
 
@@ -157,7 +154,10 @@ def main(parser, name, load_valid_test_loader, load_feature_regression_model, ev
         epoch = int(state_dict_path[-len('state_dict.00.pth'):].lstrip('state_dict.').rstrip('.pth'))
         wandb_log.running_metrics_epoch_step = epoch
         state_dict = torch.load(state_dict_path)
-        model.load_state_dict(state_dict)
+        feature_regression_model.load_state_dict(state_dict)
+        model = feature_regression_training.training.InputOutputInterpolate(
+            feature_regression_model.model['model'],
+            args.input_scale_factor)
         eval_model(model, valid_dl, test_dl, wandb_log, args)
 
 if __name__ == '__main__':
