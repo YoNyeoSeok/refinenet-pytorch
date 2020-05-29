@@ -92,12 +92,12 @@ def load_model(args):
     model = refinenet_resnet101(model_pretrained_dir)
     return model
 
-def load_training_model(load_model, args):
+def load_training_model(args):
     training_model = InputOutputInterpolate(load_model(args), args.input_scale_factor)
     return training_model
 
 def load_model_criteria_optimizer(args):
-    model = load_training_model(load_model, args)
+    model = load_training_model(args)
 
     CELoss = torch.nn.CrossEntropyLoss()
     # L1Loss = torch.nn.L1Loss()

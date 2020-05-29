@@ -20,21 +20,19 @@ def arg_parser(parser=argparse.ArgumentParser()):
     parser.add_argument('--supter-target-weight', type=float, nargs=2, default=[1, 1])
     return parser
 
-def load_leader_supter_model(load_model, args):
+def load_leader_supter_model(args):
     cuda_mapping = {
         'leader_model': 'cuda:0',
         'supter_model': 'cuda:1'}
     leader_supter_model = LeaderSupterModel(
-        load_model(args),
-        load_model(args),
+        training.load_training_model(args),
+        training.load_training_model(args),
         cuda_mapping=cuda_mapping)
     return leader_supter_model
 
 
 def load_model_criteria_optimizer(args):
-    leader_supter_model = load_leader_supter_model(
-        training.load_training_model,
-        args)
+    leader_supter_model = load_leader_supter_model(args)
 
     CELoss = nn.modules.loss.CrossEntropyLoss()
     supter_criteria = nn.modules.loss.__dict__[args.supter_criteria]()
