@@ -7,24 +7,23 @@ import argparse
 import glob
 
 import torch
-import torch.nn as nn
-from models.leader_supter import LeaderSupterModel
+# import torch.nn as nn
 import datasets as ds
 from torchvision import transforms as trf
-from models.refinenet_resnet import refinenet_resnet101
+# from models.refinenet_resnet import refinenet_resnet101
 from utils.metrics import runningScore
-from train import leader_supter_training
+from train import feature_regression_training
 
 import wandb
 import yaml
 import json
-## 1th8v62u beta_0.02
-# 1wmq3g1d beta_0.01
-# 3dlxt8tg beta_0.005
+## 34034jpo beta_0.02
+# 12s5inal beta_0.01
+# 18yvyft4 beta_0.005
 def arg_parser(parser=argparse.ArgumentParser()):
-    parser.add_argument('--wandb_id', type=str, default='3dlxt8tg')
+    parser.add_argument('--wandb_id', type=str, default='18yvyft4')
     parser.add_argument('--valid_batch_size', type=int, default=3)
-    parser.add_argument('--test_batch_size', type=int, default=2)
+    parser.add_argument('--test_batch_size', type=int, default=5)
     parser.add_argument('--gpu', type=int, default=1)
     parser.add_argument('--use-wandb', action='store_true')
     return parser
@@ -95,7 +94,7 @@ class WandbLog():
                 step=self.running_metrics_epoch_step,)
 
 def eval_model(model, valid_dl, test_dl, wandb_log, args):
-    model.to(args.gpu)
+    # model.to(args.gpu)
     model.eval()
     eval_running_metrics = [runningScore(20) for i in range(5)]
     with torch.no_grad():
@@ -108,7 +107,7 @@ def eval_model(model, valid_dl, test_dl, wandb_log, args):
         if wandb_log.use_wandb:
             for name, running_metrics in zip(['clear', 'beta_0.005', 'beta_0.01', 'beta_0.02', ], eval_running_metrics[:4]):
                 wandb_log.running_metrics_epoch_log(name, running_metrics)
-                
+
         pbar = tqdm.tqdm(enumerate(test_dl), total=len(test_dl))
         for _, (b_input, b_sparse, _, ) in pbar:
             b_sparse_pred = model(b_input.to(args.gpu)).argmax(1).cpu()
@@ -123,7 +122,7 @@ def eval_model(model, valid_dl, test_dl, wandb_log, args):
         pbar.write("{} Evaluation per_class_IoU={}".format(name, per_class_IoU))
     return eval_running_metrics
 
-def main(parser, name, load_valid_test_loader, load_model, eval_model):
+def main(parser, name, load_valid_test_loader, load_feature_regression_model, eval_model):
     args = parser.parse_args()
     print(args)
     if args.use_wandb:
@@ -135,16 +134,19 @@ def main(parser, name, load_valid_test_loader, load_model, eval_model):
     assert args.wandb_id == wandb_path[-8:], "Couldn't fild wandb id {}".format(args.wandb_id)
     with open(os.path.join(wandb_path, 'wandb-metadata.json')) as f:
         metadata = json.load(f)
-        assert metadata['name'] == 'leader_supter_training', metadata['name']
+        assert metadata['name'] == 'feature_regression_training', metadata['name']
     with open(os.path.join(wandb_path, 'config.yaml')) as f:
         metadata = yaml.load(f, Loader=yaml.BaseLoader)
         args.input_scale_factor = float(metadata['input_scale_factor']['value'])
+        args.feature_layer = metadata['feature_layer']['value']
+        args.feature_regression_criteria = metadata['feature_regression_criteria']['value']
+        args.feature_regression_target_weight = metadata['feature_regression_target_weight']['value']
 
     valid_dl, test_dl = load_valid_test_loader(args)
     # valid_dl.dataset.indices = valid_dl.dataset.indices[:18]
     # test_dl.dataset.images = test_dl.dataset.images[:3]
     print('dataset loaded')
-    model = load_model(args).cpu()
+    feature_regression_model = load_feature_regression_model(args).cpu()
     print('model loaded')
     wandb_log = WandbLog(args.use_wandb)
 
@@ -152,13 +154,16 @@ def main(parser, name, load_valid_test_loader, load_model, eval_model):
         epoch = int(state_dict_path[-len('state_dict.00.pth'):].lstrip('state_dict.').rstrip('.pth'))
         wandb_log.running_metrics_epoch_step = epoch
         state_dict = torch.load(state_dict_path)
-        model.load_state_dict(state_dict)
-        eval_model(model['leader_model'], valid_dl, test_dl, wandb_log, args)
+        feature_regression_model.load_state_dict(state_dict)
+        model = feature_regression_training.training.InputOutputInterpolate(
+            feature_regression_model.model['model'],
+            args.input_scale_factor)
+        eval_model(model, valid_dl, test_dl, wandb_log, args)
 
 if __name__ == '__main__':
     main(
         parser=arg_parser(),
-        name='leader_supter_evaluating',
+        name='feature_regression_evaluating',
         load_valid_test_loader=load_valid_test_loader,
-        load_model=leader_supter_training.load_leader_supter_model,
+        load_feature_regression_model=feature_regression_training.load_feature_regression_model,
         eval_model=eval_model)
