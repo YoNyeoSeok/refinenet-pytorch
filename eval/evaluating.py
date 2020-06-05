@@ -12,7 +12,7 @@ import datasets as ds
 from torchvision import transforms as trf
 from models.refinenet_resnet import refinenet_resnet101
 from utils.metrics import runningScore
-import training
+from train import training
 
 import wandb
 import yaml
@@ -21,12 +21,11 @@ import json
 # 2adc3ht3 beta_0.01
 # 3ewnckpv beta_0.005
 def arg_parser(parser=argparse.ArgumentParser()):
-    parser.add_argument('--wandb_id', type=str, default='3ewnckpv')
-    parser.add_argument('--valid_batch_size', type=int, default=3)
-    parser.add_argument('--test_batch_size', type=int, default=5)
+    parser.add_argument('--wandb-id', type=str, default='3ewnckpv')
+    parser.add_argument('--valid-batch-size', type=int, default=3)
+    parser.add_argument('--test-batch-size', type=int, default=5)
     parser.add_argument('--gpu', type=int, default=1)
-    # parser.add_argument('--use-wandb', action='store_true')
-    parser.add_argument('--use-wandb', action='store_false')
+    parser.add_argument('--use-wandb', action='store_true')
     return parser
 
 def load_valid_test_loader(args):
@@ -38,7 +37,6 @@ def load_valid_test_loader(args):
 
     def semantic2sparse(semantic):
         sparse = np.vectorize(lambda x: id2label[x].train_id)(np.array(semantic))
-        sparse = np.vectorize(lambda x: 19 if x == 255 else x)(sparse)
         # pylint: disable=E1101
         sparse = torch.from_numpy(sparse)
         # pylint: enable=E1101
@@ -94,14 +92,14 @@ class WandbLog():
                 step=self.running_metrics_epoch_step,)
 
 def eval_model(model, valid_dl, test_dl, wandb_log, args):
-    model.to(args.gpu)
+    device = next(model.parameters()).device
     model.eval()
     eval_running_metrics = [runningScore(20) for i in range(5)]
     with torch.no_grad():
         pbar = tqdm.tqdm(enumerate(valid_dl), total=len(valid_dl))
         for _, ((b_clear, ), (b_beta_005, b_beta_01, b_beta_02, ), (b_sparse, _, )) in pbar:
             for running_metrics, b_input in zip(eval_running_metrics[:4], [b_clear, b_beta_005, b_beta_01, b_beta_02, ]):
-                b_sparse_pred = model(b_input.to(args.gpu)).argmax(1).cpu()
+                b_sparse_pred = model(b_input.to(device)).argmax(1).cpu()
                 running_metrics.update(b_sparse.numpy(), b_sparse_pred.numpy(), )
             pbar.set_description("Valid Epoch {:3d}".format(wandb_log.running_metrics_epoch_step))
         if wandb_log.use_wandb:
@@ -110,7 +108,7 @@ def eval_model(model, valid_dl, test_dl, wandb_log, args):
 
         pbar = tqdm.tqdm(enumerate(test_dl), total=len(test_dl))
         for _, (b_input, b_sparse, _, ) in pbar:
-            b_sparse_pred = model(b_input.to(args.gpu)).argmax(1).cpu()
+            b_sparse_pred = model(b_input.to(device)).argmax(1).cpu()
             eval_running_metrics[-1].update(b_sparse.numpy(), b_sparse_pred.numpy(), )
         if wandb_log.use_wandb:
             wandb_log.running_metrics_epoch_log('testv2', eval_running_metrics[-1])
@@ -139,10 +137,10 @@ def main(parser, name, load_valid_test_loader, load_model, eval_model):
         args.input_scale_factor = float(metadata['input_scale_factor']['value'])
 
     valid_dl, test_dl = load_valid_test_loader(args)
-    valid_dl.dataset.indices = valid_dl.dataset.indices[:18]
+    # valid_dl.dataset.indices = valid_dl.dataset.indices[:18]
     # test_dl.dataset.images = test_dl.dataset.images[:3]
     print('dataset loaded')
-    model = load_model(args).cpu()
+    model = load_model(args)
     print('model loaded')
     wandb_log = WandbLog(args.use_wandb)
 

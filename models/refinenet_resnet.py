@@ -27,31 +27,37 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
-import torch.nn as nn
-import torch.nn.functional as F
 import torch
-
-import numpy as np
+import torch.nn as nn
 
 from models.resnet import (Resnet101, resnet101)
 from models.refinenets import Refinenets, refinenets
 from models.clf import Clf, clf
 
 import os
-from scipy import io as sio
 
-class RefineNet_ResNet(nn.Module):
-    def __init__(self, resnet, refinenets, clf):
-        super(RefineNet_ResNet, self).__init__()
-        self.resnet = resnet
-        self.refinenets = refinenets
-        self.clf = clf
-        
-    def forward(self, x):
-        x = self.resnet(x)
-        x = self.refinenets(x)
-        x = self.clf(x)
-        return x
+from collections import OrderedDict
+
+
+class RefineNet_ResNet(nn.Sequential):
+    def __init__(self, resnet=Resnet101(), refinenets=Refinenets(), clf=Clf()):
+        super(RefineNet_ResNet, self).__init__(
+            OrderedDict([
+                ('resnet', resnet),
+                ('refinenets', refinenets),
+                ('clf', clf)
+            ]))
+    
+    def forward(self, input):
+        for module in self:
+            device = next(module.parameters()).device
+            if isinstance(input, (tuple, list)):
+                input = tuple([inp.to(device) for inp in input])
+            elif isinstance(input, torch.Tensor):
+                input = input.to(device)
+            input = module(input)
+        return input
+    
 
 def refinenet_resnet101(weights_dir=None, **kwargs):
     if weights_dir:
@@ -60,5 +66,5 @@ def refinenet_resnet101(weights_dir=None, **kwargs):
             refinenets(os.path.join(weights_dir, 'refinenets.pth')),
             clf(os.path.join(weights_dir, 'clf.pth'))) 
     else:
-        model = RefineNet_ResNet(Resnet101(), Refinenets(), Clf())
+        model = RefineNet_ResNet()
     return model
