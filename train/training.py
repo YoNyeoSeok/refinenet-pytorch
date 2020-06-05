@@ -52,7 +52,6 @@ def load_train_valid_loader(args):
         sparse = torch.from_numpy(sparse)
         # pylint: enable=E1101
         return sparse
-    
 
     hflip = [RandomHorizontalFlip(args.data_aug_hflip_p)] if args.data_aug_hflip else []
     resized_crop = ([
@@ -161,7 +160,7 @@ class ModelOptimizer(torch.nn.Module):
         loss.backward()
         self.optimizer.step()
 
-        return loss.detach().cpu().numpy()
+        return loss
 
 def load_model_criteria_optimizer(args):
     model = load_training_model(args)
@@ -203,36 +202,36 @@ def train_model(model_optimizer, train_dl, wandb_log, args):
                 module.eval()
         
     pbar = tqdm.tqdm(enumerate(train_dl), total=len(train_dl))
-    # for _, ((b_clear_beta, ), (b_sparse, _)) in pbar:
     for _, ((b_clear_beta, ), (b_sparse, b_color)) in pbar:
         loss = model_optimizer.step(b_clear_beta.to(device), b_sparse)
         train_loss += loss
 
         pbar.set_description("Train Batch {:3d}".format(wandb_log.train_batch_step))
-        pbar.set_postfix_str("Batch Loss={:.4f}".format(loss))
-        wandb_log.train_batch_log(loss)
+        pbar.set_postfix_str("Batch Loss={:.4f}".format(loss.detach().cpu().numpy()))
+        wandb_log.train_batch_log(loss.detach().cpu().numpy())
 
         train_dl.dataset.update_share_transform()
     train_loss /= len(train_dl)
-    pbar.write("Train Epoch Loss={:.4f}".format(train_loss))
+    pbar.write("Train Epoch Loss={:.4f}".format(train_loss.detach().cpu().numpy()))
     return train_loss
 
 def eval_model(model_criteria, valid_dl, wandb_log, args):
     eval_loss = 0
     device = next(model_criteria.parameters()).device
     model_criteria.eval()
+    
     pbar = tqdm.tqdm(enumerate(valid_dl), total=len(valid_dl))
     with torch.no_grad():
         for _, ((b_clear_beta, ), (b_sparse, _)) in pbar:
-            loss = model_criteria(b_clear_beta.to(device), b_sparse).cpu().numpy()
+            loss = model_criteria(b_clear_beta.to(device), b_sparse)
             eval_loss += loss
 
             pbar.set_description("Valid Epoch {:3d}".format(wandb_log.valid_epoch_step))
     eval_loss /= len(valid_dl)
-    pbar.write("Valid Epoch Loss={:.4f}".format(eval_loss))
+    pbar.write("Valid Epoch Loss={:.4f}".format(eval_loss.cpu().numpy()))
     if wandb_log.use_wandb:
         torch.save(model_criteria.state_dict(), os.path.join(wandb.run.dir, 'state_dict.{:02d}.pth').format(wandb_log.valid_epoch_step))
-    wandb_log.valid_epoch_log(eval_loss)
+    wandb_log.valid_epoch_log(eval_loss.cpu().numpy())
     return eval_loss
 
 def main(parser, name, load_train_valid_loader, load_model_criteria_optimizer, train_model, eval_model):
