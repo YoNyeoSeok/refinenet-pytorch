@@ -17,14 +17,15 @@ from train import training
 import wandb
 import yaml
 import json
-# 2dn1nl4g beta_0.02
-# 2adc3ht3 beta_0.01
-# 3ewnckpv beta_0.005
+
 def arg_parser(parser=argparse.ArgumentParser()):
-    parser.add_argument('--wandb-id', type=str, default='3ewnckpv')
+    parser.add_argument('--input-scale-factor', type=float, default=1.)
+    parser.add_argument('--restore-run-id', type=str, required=True)
+
     parser.add_argument('--valid-batch-size', type=int, default=3)
     parser.add_argument('--test-batch-size', type=int, default=5)
-    parser.add_argument('--gpu', type=int, default=1)
+
+    # parser.add_argument('--gpu', type=int, default=1)
     parser.add_argument('--use-wandb', action='store_true')
     return parser
 
@@ -126,15 +127,15 @@ def main(parser, name, load_valid_test_loader, load_model, eval_model):
     if args.use_wandb:
         wandb.init(project='refinenet-pytorch', name=name, config=args, dir='/home/user/research/refinenet-pytorch/train')
 
-    for wandb_path in sorted(glob.glob(os.path.join('/home/user/research/refinenet-pytorch/train/wandb', 'run*'))):
-        if args.wandb_id == wandb_path[-8:]:
-            break
-    with open(os.path.join(wandb_path, 'wandb-metadata.json')) as f:
+    run_path = 'yonyeoseok/refinenet-pytorch/{}'.format(args.restore_run_id)
+    print(run_path)
+    with wandb.restore('wandb-metadata.json', run_path=run_path, root='.') as f:
         metadata = json.load(f)
-        assert metadata['name'] == 'training' 
-    with open(os.path.join(wandb_path, 'config.yaml')) as f:
-        metadata = yaml.load(f, Loader=yaml.BaseLoader)
-        args.input_scale_factor = float(metadata['input_scale_factor']['value'])
+        assert metadata['name'] == 'training', metadata['name']
+        os.remove('wandb-metadata.json')
+    with wandb.restore('config.yaml', run_path=run_path, root='.') as f:
+        config = yaml.load(f, Loader=yaml.BaseLoader)
+        os.remove('config.yaml')
 
     valid_dl, test_dl = load_valid_test_loader(args)
     # valid_dl.dataset.indices = valid_dl.dataset.indices[:18]
@@ -144,12 +145,15 @@ def main(parser, name, load_valid_test_loader, load_model, eval_model):
     print('model loaded')
     wandb_log = WandbLog(args.use_wandb)
 
-    for state_dict_path in sorted(glob.glob(os.path.join(wandb_path, 'state_dict.*.pth'))):
-        epoch = int(state_dict_path[-len('state_dict.00.pth'):].lstrip('state_dict.').rstrip('.pth'))
+    for epoch in range(int(config['total_epoch']['value'])):
         wandb_log.running_metrics_epoch_step = epoch
-        state_dict = torch.load(state_dict_path)
+        state_dict_path = 'state_dict.{:02d}.pth'.format(epoch)
+        with wandb.restore(state_dict_path, run_path=run_path) as f:
+            state_dict = torch.load(f.name)
         model.load_state_dict(state_dict)
         eval_model(model, valid_dl, test_dl, wandb_log, args)
+        if not args.use_wandb:
+            os.remove(state_dict_path)
 
 if __name__ == '__main__':
     main(

@@ -20,8 +20,10 @@ import wandb
 
 
 def arg_parser(parser=argparse.ArgumentParser()):
-    parser.add_argument('--clear-foggy-beta', type=str, default='clear', choices=['clear', 'beta_0.02', 'beta_0.01', 'beta_0.005'])
     parser.add_argument('--input-scale-factor', type=float, default=1.)
+    parser.add_argument('--freeze-batch-norm', action='store_true')
+
+    parser.add_argument('--clear-foggy-beta', type=str, default='clear', choices=['clear', 'beta_0.02', 'beta_0.01', 'beta_0.005'])
     parser.add_argument('--total-epoch', type=int, default=12)
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--valid-batch-size', type=int, default=1)
@@ -34,8 +36,6 @@ def arg_parser(parser=argparse.ArgumentParser()):
     parser.add_argument('--data-aug-crop-size', type=int, nargs=2, default=[512, 512])
     parser.add_argument('--data-aug-crop-scale', type=float, nargs=2, default=[0.7, 1.3])
     parser.add_argument('--data-aug-crop-ratio', type=float, nargs=2, default=[1, 1])
-
-    parser.add_argument('--freeze-batch-norm', action='store_true')
 
     # parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--use-wandb', action='store_true')
