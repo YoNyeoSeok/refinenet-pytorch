@@ -145,7 +145,7 @@ def main(parser, name, load_valid_test_loader, load_model, eval_model):
     print('model loaded')
     wandb_log = WandbLog(args.use_wandb)
 
-    for epoch in range(int(config['total_epoch']['value'])):
+    for epoch in range(int(config['total_epoch']['value'])+1):
         wandb_log.running_metrics_epoch_step = epoch
         state_dict_path = 'state_dict.{:02d}.pth'.format(epoch)
         with wandb.restore(state_dict_path, run_path=run_path) as f:

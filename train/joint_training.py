@@ -243,7 +243,9 @@ def eval_model(model_joint_criteria, valid_dl, wandb_log, args):
     eval_loss = Counter(OrderedDict([(k, v/len(valid_dl)) for k, v in eval_loss.items()]))
     pbar.write("Valid Epoch Loss={:.4f}".format(eval_loss['total'].cpu().numpy()))
     if wandb_log.use_wandb:
-        torch.save(model_joint_criteria.state_dict(), os.path.join(wandb.run.dir, 'state_dict.{:02d}.pth').format(wandb_log.valid_epoch_step))
+        state_dict_name = 'state_dict.{:02d}.pth'.format(wandb_log.valid_epoch_step)
+        torch.save(model_joint_criteria.state_dict(), os.path.join(wandb.run.dir, state_dict_name))
+        wandb.save(state_dict_name)
     wandb_log.valid_epoch_log(OrderedDict([(k, v.cpu().numpy()) for k, v in eval_loss.items()]))
     return eval_loss
 
@@ -261,7 +263,7 @@ def main(parser, name, load_train_valid_loader, load_model_criteria_optimizer, t
     print('model loaded')
     wandb_log = WandbLog(args.use_wandb)
 
-    # eval_model(model_criteria, valid_dl, wandb_log, args)
+    eval_model(model_criteria, valid_dl, wandb_log, args)
     for epoch in range(args.total_epoch):
         train_model(model_optimizer, train_dl, wandb_log, args)
         eval_model(model_criteria, valid_dl, wandb_log, args)
