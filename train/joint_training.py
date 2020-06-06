@@ -146,7 +146,7 @@ class ModelJointCriteria(torch.nn.Module):
             # pylint: disable=E1101
             losses = torch.stack([loss.mean() for loss in losses])
             # pylint: enable=E1101
-        return OrderedDict(list(zip(names, losses)) + [('total', losses @ self.weights.to(losses[0].device))])
+        return OrderedDict(list(zip(names, losses)) + [('total', losses @ self.weights.to(losses.device))])
 
     def state_dict(self):
         return self.model.state_dict()
@@ -218,6 +218,8 @@ def train_model(model_optimizer, train_dl, wandb_log, args):
         pbar.set_description("Train Batch {:3d}".format(wandb_log.train_batch_step))
         pbar.set_postfix_str("Batch Loss={:.4f}".format(loss['total'].detach().cpu().numpy()))
         wandb_log.train_batch_log(loss['total'].detach().cpu().numpy())
+        
+        train_dl.dataset.update_share_transform()
     train_loss = Counter(OrderedDict([(k, v/len(train_dl)) for k, v in train_loss.items()]))
     pbar.write("Train Epoch Loss={:.4f}".format(train_loss['total'].detach().cpu().numpy()))
     return train_loss
@@ -249,27 +251,8 @@ def eval_model(model_joint_criteria, valid_dl, wandb_log, args):
     wandb_log.valid_epoch_log(OrderedDict([(k, v.cpu().numpy()) for k, v in eval_loss.items()]))
     return eval_loss
 
-def main(parser, name, load_train_valid_loader, load_model_criteria_optimizer, train_model, eval_model):
-    args = parser.parse_args()
-    print(args)
-    if args.use_wandb:
-        wandb.init(project='refinenet-pytorch', name=name, config=args, dir='/home/user/research/refinenet-pytorch/train')
-
-    train_dl, valid_dl = load_train_valid_loader(args)
-    # train_dl.dataset.indices = train_dl.dataset.indices[:2]
-    # valid_dl.dataset.indices = valid_dl.dataset.indices[:4]
-    print('dataset loaded')
-    model, model_criteria, model_optimizer = load_model_criteria_optimizer(args)
-    print('model loaded')
-    wandb_log = WandbLog(args.use_wandb)
-
-    eval_model(model_criteria, valid_dl, wandb_log, args)
-    for epoch in range(args.total_epoch):
-        train_model(model_optimizer, train_dl, wandb_log, args)
-        eval_model(model_criteria, valid_dl, wandb_log, args)
-
 if __name__ == '__main__':
-    main(
+    training.main(
         parser=arg_parser(training.arg_parser(argparse.ArgumentParser(conflict_handler='resolve'))),
         name='joint-training',
         load_train_valid_loader=load_train_valid_joint_loader,
