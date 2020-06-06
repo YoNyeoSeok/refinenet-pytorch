@@ -36,6 +36,17 @@ class InputOutputInterpolateIntermediateLayerGetter(IntermediateLayerGetter):
             x, scale_factor=self.scale_factor, mode='bilinear', align_corners=False)
 
         out = super(InputOutputInterpolateIntermediateLayerGetter, self).forward(x)
+        # out = OrderedDict()
+        # for name, module in self.items():
+        #     device = next(module.parameters()).device
+        #     if isinstance(x, (tuple, list)):
+        #         x = tuple([inp.to(device) for inp in x])
+        #     elif isinstance(x, torch.Tensor):
+        #         x = x.to(device)
+        #     x = module(x)
+        #     if name in self.return_layers:
+        #         out_name = self.return_layers[name]
+        #         out[out_name] = x
         out['interp'] = torch.nn.functional.interpolate(
             out[self.interp_layer], size=size, mode='bilinear', align_corners=False)
         return out
@@ -51,20 +62,18 @@ class FeatureRegressionModel(nn.ModuleDict):
     def forward(self, input):
         out = OrderedDict()
 
+        with torch.no_grad():
+            device = next(self.target_model.parameters()).device
+            x = self.target_model(input.to(device))
+            out['target_model_feature'] = x[self.feature_layer].cpu()
+            out['target_model_predict'] = x[self.predict_layer].cpu()
+
         device = next(self.model.parameters()).device
         x = self.model(input.to(device))
         out['model_feature'] = x[self.feature_layer]
         out['model_predict'] = x[self.predict_layer]
 
-        device = next(self.target_model.parameters()).device
-        x = self.target_model(input.to(device))
-        out['target_model_feature'] = x[self.feature_layer]
-        out['target_model_predict'] = x[self.predict_layer]
-
         return out
-
-    def train(self, mode=True):
-        self.model.train(mode)
 
 def load_feature_interp_model(args):
     model = training.load_model(args)
@@ -86,6 +95,12 @@ def load_feature_regression_model(args):
         predict_layer='interp')
     feature_regression_model.model.to('cuda:1')
     feature_regression_model.target_model.to('cuda:0')
+    # feature_regression_model.model.resnet.to(1)
+    # feature_regression_model.model.refinenets.to(0)
+    # feature_regression_model.model.clf.to(0)
+    # feature_regression_model.target_model.resnet.to(1)
+    # feature_regression_model.target_model.refinenets.to(0)
+    # feature_regression_model.target_model.clf.to(0)
     return feature_regression_model
 
 class FeatureRegressionModelCriteria(nn.Module):
@@ -111,7 +126,6 @@ class FeatureRegressionModelCriteria(nn.Module):
         feature = out['model_feature']
         logit = out['model_predict']
         target_feature = out['target_model_feature']
-        # out['target_model_predict']
 
         # pylint: disable=E1101
         feature_regression_loss = self.feature_regression_criteria(feature, target_feature.to(feature.device),)
