@@ -7,24 +7,26 @@ import argparse
 import glob
 
 import torch
-# import torch.nn as nn
+import torch.nn as nn
 import datasets as ds
 from torchvision import transforms as trf
-# from models.refinenet_resnet import refinenet_resnet101
+from models.refinenet_resnet import refinenet_resnet101
 from utils.metrics import runningScore
 from train import feature_regression_training
 
 import wandb
 import yaml
 import json
-## 34034jpo beta_0.02
-# 12s5inal beta_0.01
-# 18yvyft4 beta_0.005
+import shutil
+
 def arg_parser(parser=argparse.ArgumentParser()):
-    parser.add_argument('--wandb_id', type=str, default='18yvyft4')
-    parser.add_argument('--valid_batch_size', type=int, default=3)
-    parser.add_argument('--test_batch_size', type=int, default=5)
-    parser.add_argument('--gpu', type=int, default=1)
+    parser.add_argument('--input-scale-factor', type=float, default=1.)
+    parser.add_argument('--restore-run-id', type=str, required=True)
+
+    parser.add_argument('--valid-batch-size', type=int, default=3)
+    parser.add_argument('--test-batch-size', type=int, default=5)
+
+    # parser.add_argument('--gpu', type=int, default=1)
     parser.add_argument('--use-wandb', action='store_true')
     return parser
 
@@ -37,7 +39,6 @@ def load_valid_test_loader(args):
 
     def semantic2sparse(semantic):
         sparse = np.vectorize(lambda x: id2label[x].train_id)(np.array(semantic))
-        sparse = np.vectorize(lambda x: 19 if x == 255 else x)(sparse)
         # pylint: disable=E1101
         sparse = torch.from_numpy(sparse)
         # pylint: enable=E1101
@@ -76,7 +77,6 @@ def load_valid_test_loader(args):
     test_dl = torch.utils.data.DataLoader(test_ds, batch_size=args.test_batch_size, shuffle=False)
     return valid_dl, test_dl
 
-# train_dl, valid_dl = load_train_valid_loader(args)
 class WandbLog():
     def __init__(self, use_wandb):
         self.use_wandb = use_wandb
@@ -94,14 +94,14 @@ class WandbLog():
                 step=self.running_metrics_epoch_step,)
 
 def eval_model(model, valid_dl, test_dl, wandb_log, args):
-    # model.to(args.gpu)
+    device = next(model.parameters()).device
     model.eval()
     eval_running_metrics = [runningScore(20) for i in range(5)]
     with torch.no_grad():
         pbar = tqdm.tqdm(enumerate(valid_dl), total=len(valid_dl))
         for _, ((b_clear, ), (b_beta_005, b_beta_01, b_beta_02, ), (b_sparse, _, )) in pbar:
             for running_metrics, b_input in zip(eval_running_metrics[:4], [b_clear, b_beta_005, b_beta_01, b_beta_02, ]):
-                b_sparse_pred = model(b_input.to(args.gpu)).argmax(1).cpu()
+                b_sparse_pred = model(b_input.to(device))['interp'].argmax(1).cpu()
                 running_metrics.update(b_sparse.numpy(), b_sparse_pred.numpy(), )
             pbar.set_description("Valid Epoch {:3d}".format(wandb_log.running_metrics_epoch_step))
         if wandb_log.use_wandb:
@@ -110,7 +110,7 @@ def eval_model(model, valid_dl, test_dl, wandb_log, args):
 
         pbar = tqdm.tqdm(enumerate(test_dl), total=len(test_dl))
         for _, (b_input, b_sparse, _, ) in pbar:
-            b_sparse_pred = model(b_input.to(args.gpu)).argmax(1).cpu()
+            b_sparse_pred = model(b_input.to(device))['interp'].argmax(1).cpu()
             eval_running_metrics[-1].update(b_sparse.numpy(), b_sparse_pred.numpy(), )
         if wandb_log.use_wandb:
             wandb_log.running_metrics_epoch_log('testv2', eval_running_metrics[-1])
@@ -128,37 +128,42 @@ def main(parser, name, load_valid_test_loader, load_feature_regression_model, ev
     if args.use_wandb:
         wandb.init(project='refinenet-pytorch', name=name, config=args, dir='/home/user/research/refinenet-pytorch/train')
 
-    for wandb_path in sorted(glob.glob(os.path.join('/home/user/research/refinenet-pytorch/train/wandb', 'run*'))):
-        if args.wandb_id == wandb_path[-8:]:
-            break
-    assert args.wandb_id == wandb_path[-8:], "Couldn't fild wandb id {}".format(args.wandb_id)
-    with open(os.path.join(wandb_path, 'wandb-metadata.json')) as f:
+    run_path = 'yonyeoseok/refinenet-pytorch/{}'.format(args.restore_run_id)
+    print(run_path)
+    with wandb.restore('wandb-metadata.json', run_path=run_path, root='.') as f:
         metadata = json.load(f)
-        assert metadata['name'] == 'feature_regression_training', metadata['name']
-    with open(os.path.join(wandb_path, 'config.yaml')) as f:
-        metadata = yaml.load(f, Loader=yaml.BaseLoader)
-        args.input_scale_factor = float(metadata['input_scale_factor']['value'])
-        args.feature_layer = metadata['feature_layer']['value']
-        args.feature_regression_criteria = metadata['feature_regression_criteria']['value']
-        args.feature_regression_target_weight = metadata['feature_regression_target_weight']['value']
+        assert metadata['name'] == 'feature-regression-training', metadata['name']
+        os.remove('wandb-metadata.json')
+    with wandb.restore('config.yaml', run_path=run_path, root='.') as f:
+        config = yaml.load(f, Loader=yaml.BaseLoader)
+        args.feature_layer = config['feature_layer']
+        os.remove('config.yaml')
 
     valid_dl, test_dl = load_valid_test_loader(args)
-    # valid_dl.dataset.indices = valid_dl.dataset.indices[:18]
-    # test_dl.dataset.images = test_dl.dataset.images[:3]
+    # valid_dl.dataset.indices = valid_dl.dataset.indices[:2]
+    # test_dl.dataset.images = test_dl.dataset.images[:2]
     print('dataset loaded')
-    feature_regression_model = load_feature_regression_model(args).cpu()
+    feature_regression_model = load_feature_regression_model(args)
     print('model loaded')
     wandb_log = WandbLog(args.use_wandb)
 
-    for state_dict_path in sorted(glob.glob(os.path.join(wandb_path, 'state_dict.*.pth'))):
-        epoch = int(state_dict_path[-len('state_dict.00.pth'):].lstrip('state_dict.').rstrip('.pth'))
+    for epoch in range(int(config['total_epoch']['value'])+1):
         wandb_log.running_metrics_epoch_step = epoch
-        state_dict = torch.load(state_dict_path)
+        state_dict_path = 'state_dict.{:02d}.pth'.format(epoch)
+        if args.use_wandb:
+            for local_run_dir in os.listdir(os.path.dirname(wandb.run.dir)):
+                if args.restore_run_id in local_run_dir:
+                    if state_dict_path in os.listdir(os.path.join(os.path.dirname(wandb.run.dir), local_run_dir)):
+                        source_file = os.path.join(os.path.dirname(wandb.run.dir), local_run_dir, state_dict_path)
+                        target_file = os.path.join(wandb.run.dir, state_dict_path)
+                        shutil.copyfile(source_file, target_file)
+                    break
+        with wandb.restore(state_dict_path, run_path=run_path) as f:
+            state_dict = torch.load(f.name)
         feature_regression_model.load_state_dict(state_dict)
-        model = feature_regression_training.training.InputOutputInterpolate(
-            feature_regression_model.model['model'],
-            args.input_scale_factor)
-        eval_model(model, valid_dl, test_dl, wandb_log, args)
+        eval_model(feature_regression_model.model, valid_dl, test_dl, wandb_log, args)
+        if not args.use_wandb:
+            os.remove(state_dict_path)
 
 if __name__ == '__main__':
     main(
