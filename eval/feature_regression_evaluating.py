@@ -160,6 +160,7 @@ def main(parser, name, load_valid_test_loader, load_feature_regression_model, ev
                     break
         with wandb.restore(state_dict_path, run_path=run_path) as f:
             state_dict = torch.load(f.name)
+        wandb.save(state_dict_path)
         feature_regression_model.load_state_dict(state_dict)
         eval_model(feature_regression_model.model, valid_dl, test_dl, wandb_log, args)
         if not args.use_wandb:
